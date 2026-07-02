@@ -1,0 +1,11 @@
+Microsoft Foundry Local Nedir ve Nasıl Çalışır?
+Microsoft Foundry Local, geliştiricilerin yerel bilgisayarlarında büyük dil modellerini (LLM) ve embedding modellerini tamamen çevrimdışı (offline) ve ücretsiz çalıştırmasını sağlayan bir çalışma zamanı (runtime) ve SDK'dır. Cihazınızda internet bağlantısı veya bulut hesabı olmadan yapay zeka çıkarımı yapmanıza olanak tanır.
+
+Desteklenen Donanımlar ve Hızlandırma:
+Foundry Local, cihazınızda bulunan donanımları (CPU, GPU ve NPU) otomatik olarak algılar. ONNX Runtime GenAI altyapısını kullanarak modelleri en yüksek donanım hızlandırmasıyla çalıştırır. Windows ML ve macOS Apple Silicon üzerinde optimize edilmiştir.
+
+Model Kataloğu ve Çeşitleri:
+Katalogda yerel donanımlar için optimize edilmiş ve sıkıştırılmış (quantized) modeller bulunur. Öne çıkan modeller arasında Phi-4-mini (3.8B), Qwen 2.5 (0.5B, 1.5B, 7B), DeepSeek-R1 (7B) ve Qwen3-embedding yer alır. Phi-4-mini modeli yerel ajan (agent) ve fonksiyon çağırma (tool calling) işlemleri için optimize edilmiştir.
+
+SDK ve Geliştirme Seçenekleri:
+Foundry Local; Python, JavaScript/TypeScript, C# ve Rust dilleri için yerel SDK'lar sunar. Ayrıca "start_web_service()" fonksiyonu ile yerel olarak OpenAI uyumlu bir REST API sunucusu ayağa kaldırabilir. Bu sayede mevcut OpenAI uyumlu uygulamalarınızı kod değişikliği yapmadan yerel modele bağlayabilirsiniz.
