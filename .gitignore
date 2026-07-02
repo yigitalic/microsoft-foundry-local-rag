@@ -1,0 +1,17 @@
+# Python virtual environment
+.venv/
+__pycache__/
+*.pyc
+
+# Local Database files
+*.db
+*.db-journal
+
+# Scratch directories
+scratch/
+
+# Local configuration / OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
