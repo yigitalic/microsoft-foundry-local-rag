@@ -27,16 +27,13 @@ st.markdown("""
         font-family: 'Outfit', sans-serif;
     }
     
-    /* Premium Gradients */
+    /* Premium Solid Colors */
     .main-title {
         font-family: 'Space Grotesk', sans-serif;
-        background: linear-gradient(135deg, #FF4B4B 0%, #3B82F6 50%, #8B5CF6 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        color: #F8FAFC; /* Düz ve temiz kırık beyaz */
         font-size: 3.2rem;
         font-weight: 800;
         margin-bottom: 0.2rem;
-        text-shadow: 0px 4px 20px rgba(59, 130, 246, 0.1);
     }
     
     .subtitle {
@@ -51,9 +48,7 @@ st.markdown("""
         font-family: 'Space Grotesk', sans-serif;
         font-size: 1.6rem;
         font-weight: 700;
-        background: linear-gradient(135deg, #FF4B4B 0%, #8B5CF6 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
+        color: #3B82F6; /* Düz kurumsal mavi */
         margin-bottom: 1.5rem;
         text-align: center;
         border-bottom: 2px solid rgba(255, 255, 255, 0.05);
