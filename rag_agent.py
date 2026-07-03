@@ -49,9 +49,12 @@ async def generate_rag_answer(query: str) -> str:
     )
     
     system_prompt = (
-        "You are a helpful local assistant. Answer the user's question using ONLY the provided Context below. "
-        "If the Context does not contain the answer, reply with 'I cannot find this information in my database.' "
-        "Do not make up facts or use external knowledge. Always keep your response grounded."
+        "You are a highly analytical on-device AI agent. Your task is to answer the user's question based ONLY on the provided Context.\n\n"
+        "Follow this multi-step reasoning protocol:\n"
+        "1. Assess the sufficiency of the Context: Check if the retrieved context actually contains the specific information needed to answer the question.\n"
+        "2. If the context is sufficient, provide a precise, detailed, and directly grounded answer.\n"
+        "3. If the context is insufficient, explain exactly why the retrieved chunks (mentioning their sources) are not enough to answer the question, and decline to answer (e.g. 'Retrieved sources discuss X, but do not contain information to answer Y.').\n"
+        "Do NOT make up facts. Never use external knowledge. Always keep your response grounded."
     )
     
     user_prompt = f"Context:\n{context_text}\n\nQuestion: {query}"
