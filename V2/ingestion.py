@@ -1,7 +1,6 @@
 import os
 import sqlite3
 import openai
-from urllib.parse import urlparse
 from database import init_db, insert_document, DB_FILE
 from vector_search import VectorSearchEngine
 from foundry_local_sdk import Configuration, FoundryLocalManager
@@ -9,7 +8,7 @@ from foundry_local_sdk import Configuration, FoundryLocalManager
 DOCS_DIR = "documents"
 
 def clear_database():
-    """Veritabanındaki tüm kayıtları temizler."""
+    """Veritabanındaki tüm dökümanları temizler."""
     conn = sqlite3.connect(DB_FILE)
     cursor = conn.cursor()
     cursor.execute("DELETE FROM documents")
@@ -38,70 +37,9 @@ def extract_docx_text(file_path: str) -> str:
             text += p.text + "\n\n"
     return text
 
-# --- Web Kazıyıcı (Scraper) Modülü ---
+# --- Dosya Tiplerine Göre Akıllı Parçalama (Chunking) Yöntemleri ---
 
-def scrape_and_save_url(url: str) -> str:
-    """Belirtilen URL'den temiz metin çeker ve documents klasörüne kaydeder."""
-    import requests
-    from bs4 import BeautifulSoup
-    
-    headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
-    try:
-        print(f"[SCRAPER] Adres kazınıyor: {url}")
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        
-        soup = BeautifulSoup(response.content, "html.parser")
-        
-        # Gereksiz script, style ve navigasyon öğelerini sil
-        for element in soup(["script", "style", "nav", "footer", "header", "aside"]):
-            element.decompose()
-            
-        title = soup.title.string.strip() if soup.title else "Scraped Content"
-        paragraphs = [p.get_text().strip() for p in soup.find_all("p") if p.get_text().strip()]
-        
-        full_text = f"Title: {title}\nURL: {url}\n\n" + "\n\n".join(paragraphs)
-        
-        # Dosya adı üret (örn: web_scraper_google_com.txt)
-        parsed_url = urlparse(url)
-        domain = parsed_url.netloc.replace(".", "_")
-        file_name = f"web_scraper_{domain}.txt"
-        
-        os.makedirs(DOCS_DIR, exist_ok=True)
-        file_path = os.path.join(DOCS_DIR, file_name)
-        
-        with open(file_path, "w", encoding="utf-8") as f:
-            f.write(full_text)
-            
-        print(f"[SCRAPER] Başarıyla kaydedildi: {file_path}")
-        return file_name
-    except Exception as e:
-        print(f"[HATA] Web kazıma sırasında hata oluştu: {e}")
-        return None
-
-# --- Parçalama (Chunking) Yöntemleri ---
-
-def split_into_child_chunks(text: str, size: int = 250) -> list[str]:
-    """Ebeveyn metni yaklaşık *size* karakterlik küçük alt parçalara böler."""
-    words = text.split()
-    chunks = []
-    current_chunk = []
-    current_length = 0
-    
-    for word in words:
-        current_chunk.append(word)
-        current_length += len(word) + 1
-        if current_length >= size:
-            chunks.append(" ".join(current_chunk))
-            current_chunk = []
-            current_length = 0
-            
-    if current_chunk:
-        chunks.append(" ".join(current_chunk))
-    return [c for c in chunks if c.strip()]
-
-def get_parent_chunks_python(code: str) -> list[str]:
-    """Python kodundan büyük sınıf ve fonksiyon ebeveyn parçaları çıkarır."""
+def chunk_python_code(code: str) -> list[str]:
     lines = code.split("\n")
     chunks = []
     current_chunk = []
@@ -116,8 +54,7 @@ def get_parent_chunks_python(code: str) -> list[str]:
         chunks.append("\n".join(current_chunk).strip())
     return [c for c in chunks if c]
 
-def get_parent_chunks_javascript(code: str) -> list[str]:
-    """JavaScript kodundan büyük fonksiyon ve sınıf ebeveyn parçaları çıkarır."""
+def chunk_javascript_code(code: str) -> list[str]:
     lines = code.split("\n")
     chunks = []
     current_chunk = []
@@ -132,8 +69,7 @@ def get_parent_chunks_javascript(code: str) -> list[str]:
         chunks.append("\n".join(current_chunk).strip())
     return [c for c in chunks if c]
 
-def get_parent_chunks_markdown(md: str) -> list[str]:
-    """Markdown metninden büyük başlık ebeveyn parçaları çıkarır."""
+def chunk_markdown(md: str) -> list[str]:
     lines = md.split("\n")
     chunks = []
     current_chunk = []
@@ -148,14 +84,16 @@ def get_parent_chunks_markdown(md: str) -> list[str]:
         chunks.append("\n".join(current_chunk).strip())
     return [c for c in chunks if c]
 
-def get_parent_chunks_text(text: str) -> list[str]:
-    """Düz metinleri büyük paragraflara göre böler (Ebeveyn parçalar)."""
+def chunk_plain_text(text: str) -> list[str]:
     return [p.strip() for p in text.split("\n\n") if p.strip()]
 
-# --- AI ile Otomatik Özetleme ve Etiketleme ---
+# --- AI ile Otomatik Özetleme ve Etiketleme Yardımcısı ---
 
 def generate_summary_and_tags(text: str, filename: str, endpoint: str, model_id: str) -> tuple[str, str]:
+    """phi-4-mini kullanarak dökümana 1 cümlelik özet ve 5 adet etiket üretir."""
     client = openai.OpenAI(base_url=f"{endpoint}/v1", api_key="not-needed")
+    
+    # Bellek ve hız tasarrufu amacıyla ilk 2000 karakteri analiz ediyoruz
     text_sample = text[:2000]
     
     prompt = (
@@ -187,13 +125,15 @@ def generate_summary_and_tags(text: str, filename: str, endpoint: str, model_id:
                 
         return summary, tags
     except Exception as e:
-        print(f"   [HATA] Özet üretilemedi: {e}")
+        print(f"   [HATA] Özet üretilirken hata oluştu: {e}")
         return "Summary generation failed.", "failed"
 
 # --- Ana İndeksleme Fonksiyonu ---
 
 def run_ingestion():
-    print("=== V3.0 DOKÜMAN VE KOD İNDEKSLEME BAŞLATILDI ===")
+    print("=== V2.1 DOKÜMAN VE KOD İNDEKSLEME BAŞLATILDI ===")
+    
+    # 1. Veritabanını ilklendir ve temizle
     init_db()
     clear_database()
     
@@ -201,24 +141,30 @@ def run_ingestion():
         os.makedirs(DOCS_DIR, exist_ok=True)
         
     all_files = [f for f in os.listdir(DOCS_DIR) if os.path.splitext(f)[1].lower() in [".txt", ".pdf", ".docx", ".py", ".js", ".md"]]
-    print(f"[SİSTEM] '{DOCS_DIR}' klasöründe {len(all_files)} dosya bulundu.")
+    print(f"[SİSTEM] '{DOCS_DIR}' klasöründe {len(all_files)} adet indekslenecek dosya bulundu.")
     
     if not all_files:
+        print("[SİSTEM] İndekslenecek dosya yok. İşlem tamamlandı.")
         return
         
-    # --- ADIM 1: phi-4-mini İLE ÖZETLERİ ÜRET ---
+    # --- ADIM A: phi-4-mini İLE ÖZETLERİ ÜRET (Çevrimdışı LLM) ---
     print("\n[ADIM 1] Dosya özetleri ve etiketleri phi-4-mini ile üretiliyor...")
     web_config = Configuration.WebService(urls="http://127.0.0.1:0")
     config = Configuration(app_name="foundry-local-test", web=web_config)
+    
     try:
         FoundryLocalManager.initialize(config)
     except Exception:
         pass
+        
     manager = FoundryLocalManager.instance
+    catalog = manager.catalog
+    
     manager.start_web_service()
     endpoint = manager.urls[0]
     
-    llm = manager.catalog.get_model("phi-4-mini")
+    # Phi-4-mini yükle
+    llm = catalog.get_model("phi-4-mini")
     llm.load()
     
     file_summaries = {}
@@ -227,6 +173,8 @@ def run_ingestion():
     for file_name in all_files:
         file_path = os.path.join(DOCS_DIR, file_name)
         ext = os.path.splitext(file_name)[1].lower()
+        
+        # Metni oku
         try:
             if ext == ".pdf":
                 text = extract_pdf_text(file_path)
@@ -235,19 +183,25 @@ def run_ingestion():
             else:
                 with open(file_path, "r", encoding="utf-8") as f:
                     text = f.read()
-            file_contents[file_name] = text
         except Exception as e:
             print(f" [HATA] {file_name} okunamadı: {e}")
             continue
             
+        file_contents[file_name] = text
+        
+        # Özet ve etiket üret
+        print(f" - Özetleniyor: {file_name}...")
         summary, tags = generate_summary_and_tags(text, file_name, endpoint, llm.id)
         file_summaries[file_name] = {"summary": summary, "tags": tags}
+        print(f"   -> Özet: {summary}")
+        print(f"   -> Etiketler: {tags}")
         
+    # LLM bellekten çıkarılır
     llm.unload()
     manager.stop_web_service()
     
-    # --- ADIM 2: EBEVEYN-ÇOCUK EMBEDDINGS ÜRET VE KAYDET ---
-    print("\n[ADIM 2] Ebeveyn-Çocuk ilişkisiyle veri tabanı indeksleniyor...")
+    # --- ADIM B: qwen3-embedding İLE EMBEDDINGS ÜRET VE KAYDET ---
+    print("\n[ADIM 2] Doküman parçaları embedding üretilerek SQLite veritabanına kaydediliyor...")
     search_engine = VectorSearchEngine()
     
     supported_extensions = {
@@ -259,65 +213,43 @@ def run_ingestion():
         ".md": "markdown"
     }
     
-    total_parents = 0
-    total_children = 0
-    
+    total_chunks = 0
     for file_name, text in file_contents.items():
         ext = os.path.splitext(file_name)[1].lower()
         file_type = supported_extensions[ext]
+        
+        # Parçalama (Chunking)
+        if file_type == "python":
+            chunks = chunk_python_code(text)
+        elif file_type == "javascript":
+            chunks = chunk_javascript_code(text)
+        elif file_type == "markdown":
+            chunks = chunk_markdown(text)
+        else:
+            chunks = chunk_plain_text(text)
+            
+        # Dosyaya ait özet ve etiketleri al
         summary = file_summaries[file_name]["summary"]
         tags = file_summaries[file_name]["tags"]
         
-        # 1. Ebeveyn parçaları çıkar (Parent Chunks)
-        if file_type == "python":
-            parent_chunks = get_parent_chunks_python(text)
-        elif file_type == "javascript":
-            parent_chunks = get_parent_chunks_javascript(text)
-        elif file_type == "markdown":
-            parent_chunks = get_parent_chunks_markdown(text)
-        else:
-            parent_chunks = get_parent_chunks_text(text)
-            
-        print(f"\nİndeksleniyor: {file_name} ({len(parent_chunks)} ana paragraf/ebeveyn)")
-        
-        for p_idx, p_chunk in enumerate(parent_chunks, 1):
-            # Ebeveyni veritabanına kaydet (Vektörü NULL, is_parent=1)
-            parent_title = f"{file_name} - Parent {p_idx}"
-            parent_db_id = insert_document(
-                title=parent_title,
-                content=p_chunk,
-                embedding=None,
+        print(f"\nKaydediliyor: {file_name} ({len(chunks)} parça)")
+        for idx, chunk in enumerate(chunks, 1):
+            title = f"{file_name} - Parça {idx}"
+            embedding = search_engine.generate_embedding(chunk)
+            insert_document(
+                title=title,
+                content=chunk,
+                embedding=embedding,
                 file_type=file_type,
                 source_file=file_name,
                 summary=summary,
-                tags=tags,
-                parent_id=None,
-                is_parent=1
+                tags=tags
             )
-            total_parents += 1
+            total_chunks += 1
             
-            # 2. Ebeveyn parçayı çocuk parçalara böl (Child Chunks)
-            child_chunks = split_into_child_chunks(p_chunk, size=250)
-            
-            for c_idx, c_chunk in enumerate(child_chunks, 1):
-                # Çocuk parçasını kaydet (Embedding'i var, is_parent=0, parent_id = parent_db_id)
-                child_title = f"{file_name} - Child {p_idx}_{c_idx}"
-                embedding = search_engine.generate_embedding(c_chunk)
-                insert_document(
-                    title=child_title,
-                    content=c_chunk,
-                    embedding=embedding,
-                    file_type=file_type,
-                    source_file=file_name,
-                    summary=summary,
-                    tags=tags,
-                    parent_id=parent_db_id,
-                    is_parent=0
-                )
-                total_children += 1
-                
+    # Kapatma temizliği
     search_engine.close()
-    print(f"\n[BAŞARI] İndeksleme bitti. Ebeveyn: {total_parents}, Çocuk (Vektör): {total_children}")
+    print(f"\n[BAŞARI] Toplam {total_chunks} parça özet ve etiketleriyle birlikte SQLite veritabanına indekslendi.")
 
 if __name__ == "__main__":
     run_ingestion()

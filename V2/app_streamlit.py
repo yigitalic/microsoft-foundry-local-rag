@@ -11,15 +11,15 @@ from database import (
     create_session, get_sessions, save_message, get_session_messages, delete_session
 )
 from vector_search import VectorSearchEngine
-from retrieval import retrieve_context, generate_expanded_queries
-from ingestion import run_ingestion, scrape_and_save_url
+from retrieval import retrieve_context
+from ingestion import run_ingestion
 
 # Veritabanını ilklendir
 init_db()
 
 # Page Configuration & Styling
 st.set_page_config(
-    page_title="Local RAG AI Assistant V3.0",
+    page_title="Local RAG AI Assistant V2.1",
     page_icon="🤖",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -100,6 +100,23 @@ st.markdown("""
         margin-bottom: 0.3rem;
     }
     
+    /* Session List Item */
+    .session-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.5rem 0.8rem;
+        border-radius: 8px;
+        margin-bottom: 0.4rem;
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+    }
+    
+    .session-item-active {
+        background: rgba(59, 130, 246, 0.15);
+        border: 1px solid rgba(59, 130, 246, 0.3);
+    }
+    
     .tag-badge {
         display: inline-block;
         background: rgba(59, 130, 246, 0.15);
@@ -115,9 +132,17 @@ st.markdown("""
 
 # Helper function to run async RAG pipeline
 async def run_local_rag(query: str, top_k: int = 2, file_type_filter: str = None):
-    from foundry_local_sdk import Configuration, FoundryLocalManager
+    filter_val = None if file_type_filter == "Hepsi" else file_type_filter
+    chunks = retrieve_context(query, top_k=top_k, file_type_filter=filter_val)
     
-    # 1. Local LLM (phi-4-mini) servisini başlat (Sorgu genişletme ve arama için)
+    if not chunks:
+        return "I cannot find any relevant documents matching the query/filter in the database.", []
+        
+    context_text = ""
+    for idx, chunk in enumerate(chunks, 1):
+        context_text += f"\n[Doküman {idx}] (Kaynak: {chunk['title']})\n{chunk['content']}\n"
+        
+    # Local LLM (phi-4-mini) başlatma ve çıkarım
     web_config = Configuration.WebService(urls="http://127.0.0.1:0")
     config = Configuration(app_name="foundry-local-test", web=web_config)
     
@@ -140,28 +165,6 @@ async def run_local_rag(query: str, top_k: int = 2, file_type_filter: str = None
         api_key="not-needed"
     )
     
-    # --- ADIM A: ÇOKLU SORGU GENİŞLETME (Multi-Query Expansion) ---
-    st.toast("🔍 Sorgu genişletiliyor...")
-    expanded_queries = generate_expanded_queries(query, client, model.id)
-    # Genişletilen sorguları arayüzde bilgilendirme olarak göster
-    if len(expanded_queries) > 1:
-        st.toast(f"Genişletilen Sorgular: {', '.join(expanded_queries[1:])}")
-        
-    # --- ADIM B: HİBRİT EBEVEYN DÖKÜMAN ARAMASI (Parent-Document Retrieval) ---
-    filter_val = None if file_type_filter == "Hepsi" else file_type_filter
-    chunks = retrieve_context(query, top_k=top_k, file_type_filter=filter_val, expanded_queries=expanded_queries)
-    
-    if not chunks:
-        model.unload()
-        manager.stop_web_service()
-        return "I cannot find any relevant documents matching the query/filter in the database.", []
-        
-    # Ebeveyn metinlerini birleştir
-    context_text = ""
-    for idx, chunk in enumerate(chunks, 1):
-        context_text += f"\n[Doküman {idx}] (Kaynak: {chunk['title']})\n{chunk['content']}\n"
-        
-    # --- ADIM C: CEVAP ÜRETİMİ ---
     system_prompt = (
         "You are a highly analytical on-device AI agent. Your task is to answer the user's question based ONLY on the provided Context.\n\n"
         "Follow this multi-step reasoning protocol:\n"
@@ -183,7 +186,6 @@ async def run_local_rag(query: str, top_k: int = 2, file_type_filter: str = None
     
     answer = response.choices[0].message.content
     
-    # Kapatma temizliği
     model.unload()
     manager.stop_web_service()
     
@@ -191,38 +193,42 @@ async def run_local_rag(query: str, top_k: int = 2, file_type_filter: str = None
 
 # Streamlit Session State Initialization
 if "selected_session_id" not in st.session_state:
+    # Varsayılan ilk oturumu oluştur
     sessions = get_sessions()
     if sessions:
         st.session_state.selected_session_id = sessions[0]["id"]
     else:
         initial_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        create_session(initial_id, f"Sohbet - {datetime.now().strftime('%H:%M')}")
+        create_session(initial_id, f"Yeni Sohbet - {datetime.now().strftime('%H:%M')}")
         st.session_state.selected_session_id = initial_id
 
+# Aktif oturum mesajlarını yükle
 st.session_state.messages = get_session_messages(st.session_state.selected_session_id)
 
 # Main Layout Headers
-st.markdown("<h1 class='main-title'>🤖 Local RAG AI Assistant V3.0</h1>", unsafe_allow_html=True)
-st.markdown("<p class='subtitle'>Süper Gelişmiş Ebeveyn-Çocuk Retrieval, Çoklu Sorgu ve Web Kazıyıcılı RAG Sistemi</p>", unsafe_allow_html=True)
+st.markdown("<h1 class='main-title'>🤖 Local RAG AI Assistant V2.1</h1>", unsafe_allow_html=True)
+st.markdown("<p class='subtitle'>SQLite Sohbet Geçmişi ve Yapay Zeka Özetleme Destekli Çevrimdışı Bilgi Sistemi</p>", unsafe_allow_html=True)
 
 # Sidebar
 with st.sidebar:
-    st.markdown("<div class='sidebar-logo'>⚡ FOUNDRY LOCAL V3.0</div>", unsafe_allow_html=True)
+    st.markdown("<div class='sidebar-logo'>⚡ FOUNDRY LOCAL V2.1</div>", unsafe_allow_html=True)
     
     # Yeni Sohbet ve Oturum Yönetimi
-    st.markdown("### 💬 Sohbet Oturumları")
+    st.markdown("### 💬 Sohbetler")
     if st.button("➕ Yeni Sohbet Başlat", use_container_width=True):
         new_id = f"session_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-        create_session(new_id, f"Sohbet - {datetime.now().strftime('%H:%M')}")
+        create_session(new_id, f"Sohbet - {datetime.now().strftime('%H:%M:%S')}")
         st.session_state.selected_session_id = new_id
         st.session_state.messages = []
         st.rerun()
         
     # Sohbet Listesi
-    st.markdown("<div style='max-height: 180px; overflow-y: auto; margin-bottom: 10px;'>", unsafe_allow_html=True)
+    st.markdown("<div style='max-height: 200px; overflow-y: auto;'>", unsafe_allow_html=True)
     for session in get_sessions():
         is_active = session["id"] == st.session_state.selected_session_id
         active_class = "session-item-active" if is_active else ""
+        
+        # Flex layout ile silme butonunu hizalama
         col_title, col_del = st.columns([0.8, 0.2])
         with col_title:
             if st.button(session["title"], key=f"select_{session['id']}", use_container_width=True, type="secondary" if not is_active else "primary"):
@@ -230,8 +236,9 @@ with st.sidebar:
                 st.session_state.messages = get_session_messages(session["id"])
                 st.rerun()
         with col_del:
-            if st.button("🗑️", key=f"del_{session['id']}", use_container_width=True):
+            if st.button("🗑️", key=f"del_{session['id']}", help="Sohbeti sil", use_container_width=True):
                 delete_session(session["id"])
+                # Eğer silinen aktif sohbet ise başkasına geç
                 if is_active:
                     remaining = get_sessions()
                     if remaining:
@@ -241,53 +248,40 @@ with st.sidebar:
                 st.rerun()
     st.markdown("</div>", unsafe_allow_html=True)
     
-    st.markdown("### ⚙️ Ayarlar & Dosya Yükleme")
+    st.markdown("### ⚙️ Ayarlar & Dosyalar")
     
-    # Arama Filtrelemesi
+    # Arama Filtrelemesi (Metadata Filtering)
     st.markdown("<div class='sidebar-section'>", unsafe_allow_html=True)
     st.markdown("<span style='font-size:1rem;font-weight:700;'>🔍 Filtre (Metaveri)</span>", unsafe_allow_html=True)
     filter_options = ["Hepsi", "text", "pdf", "docx", "python", "javascript", "markdown"]
     selected_filter = st.selectbox(
-        "Tür:", options=filter_options, index=0, label_visibility="collapsed"
+        "Tür:",
+        options=filter_options,
+        index=0,
+        label_visibility="collapsed"
     )
     st.markdown("</div>", unsafe_allow_html=True)
     
-    # Dosya Yükleyici
+    # Dosya Yükleyici (Ingestion)
     st.markdown("<div class='sidebar-section'>", unsafe_allow_html=True)
-    st.markdown("<span style='font-size:1rem;font-weight:700;'>📁 Belge / Kod Yükle</span>", unsafe_allow_html=True)
+    st.markdown("<span style='font-size:1rem;font-weight:700;'>📁 Yeni Doküman / Kod Yükle</span>", unsafe_allow_html=True)
     uploaded_file = st.file_uploader(
-        "Metin, PDF, Word, Kod...",
+        "Desteklenenler: .txt, .pdf, .docx, .py, .js, .md",
         type=["txt", "pdf", "docx", "py", "js", "md"],
         label_visibility="collapsed"
     )
+    
     if uploaded_file is not None:
-        if st.button("İndeksle", key="upload_btn", use_container_width=True):
+        if st.button("Veritabanına İndeksle", use_container_width=True):
             os.makedirs("documents", exist_ok=True)
             file_path = os.path.join("documents", uploaded_file.name)
             with open(file_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
-            with st.spinner("AI Özet çıkarılıyor ve parçalanıyor..."):
+                
+            with st.spinner("İçerik akıllıca parçalanıp özetleniyor (Çevrimdışı)..."):
                 run_ingestion()
             st.success(f"'{uploaded_file.name}' indekslendi!")
             st.rerun()
-    st.markdown("</div>", unsafe_allow_html=True)
-    
-    # Web Scraper (URL Kazıma)
-    st.markdown("<div class='sidebar-section'>", unsafe_allow_html=True)
-    st.markdown("<span style='font-size:1rem;font-weight:700;'>🌐 Web Sayfası Kazı & İndeksle</span>", unsafe_allow_html=True)
-    url_input = st.text_input("URL girin (http...):", label_visibility="collapsed")
-    if st.button("Web Sayfasını İndeksle", use_container_width=True):
-        if url_input.strip().startswith("http"):
-            with st.spinner("Web sayfası indiriliyor ve temizleniyor..."):
-                file_name = scrape_and_save_url(url_input.strip())
-                if file_name:
-                    run_ingestion()
-                    st.success(f"Web sayfası '{file_name}' olarak indekslendi!")
-                    st.rerun()
-                else:
-                    st.error("Web sayfası kazınamadı.")
-        else:
-            st.error("Lütfen geçerli bir URL girin.")
     st.markdown("</div>", unsafe_allow_html=True)
 
 # Main Application Tabs
@@ -295,17 +289,16 @@ tab_chat, tab_analytics = st.tabs(["💬 Sohbet Asistanı", "📊 Veri Analitiğ
 
 # TAB 1: Chat Assistant
 with tab_chat:
+    # Karşılama Kartı
     if not st.session_state.messages:
         st.markdown("""
         <div class='welcome-card'>
-            <div class='welcome-header'>👋 Süper Gelişmiş Yerel RAG Sistemine Hoş Geldiniz (V3.0)!</div>
+            <div class='welcome-header'>👋 Çevrimdışı Bilgi Sistemine Hoş Geldiniz (V2.1)!</div>
             <div class='welcome-text'>
-                Bu sürümde, arama kalitesini artırmak için şu teknolojiler bir arada çalışır:
-                <ul>
-                    <li><b>Multi-Query Expansion:</b> Sorduğunuz soru arka planda yerel modelle çoğaltılarak aranır.</li>
-                    <li><b>Parent-Document Retrieval:</b> Arama küçük parçalar üzerinde yapılır, ancak yapay zekaya dökümanın ebeveyn paragrafı beslenir.</li>
-                    <li><b>Web Scraper:</b> Sol menüden bir URL girerek web sayfalarını anında veritabanınıza katabilirsiniz.</li>
-                </ul>
+                Bu sürümde, sohbetleriniz <b>SQLite veritabanında saklanır</b> ve sol menüden geçmiş sohbetlerinize erişebilirsiniz.
+                Arama sonuçlarındaki kod parçaları artık <b>akıllı kod renklendirici (Syntax Highlighting)</b> ile gösterilmektedir.
+                <br><br>
+                <b>Başlamak için bir soru yazabilir veya yeni sohbet açabilirsiniz.</b>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -318,32 +311,37 @@ with tab_chat:
 
     # Kullanıcı Girişi
     if user_query := st.chat_input("Yerel belgeleriniz hakkında soru sorun..."):
+        # Kullanıcı mesajını ekle ve veritabanına kaydet
         st.chat_message("user", avatar="👤").markdown(user_query)
         save_message(st.session_state.selected_session_id, "user", user_query)
         
         with st.chat_message("assistant", avatar="🤖"):
-            with st.spinner("Sorgu genişletiliyor, aranıyor ve cevaplanıyor (Çevrimdışı)..."):
+            with st.spinner("Yerel model arama yapıyor ve cevap hazırlıyor (Çevrimdışı)..."):
                 answer, chunks = asyncio.run(run_local_rag(user_query, file_type_filter=selected_filter))
                 
                 st.markdown(answer)
                 
                 # Akıllı Kod Renklendirmeli Kaynak Gösterimi
                 if chunks:
-                    with st.expander("🔍 Alakalı Ebeveyn Kaynakları Göster"):
+                    with st.expander("🔍 Alakalı Kaynak Parçalarını Göster"):
                         for chunk in chunks:
-                            st.markdown(f"<div class='source-header'>Kaynak: {chunk['title']} (RRF Skoru: {chunk['score']:.4f})</div>", unsafe_allow_html=True)
+                            st.markdown(f"<div class='source-header'>Kaynak: {chunk['title']} (RRF Skoru: {chunk['score']:.4f}, Tür: {chunk.get('file_type', 'txt').upper()})</div>", unsafe_allow_html=True)
                             
-                            ftype = chunk.get("file_type", "text")
+                            # Kod ise renklendirerek göster, metin ise info kartı olarak
+                            ftype = chunk.get("file_type", "txt")
                             if ftype in ["python", "javascript", "markdown"]:
                                 lang = "python" if ftype == "python" else ("javascript" if ftype == "javascript" else "markdown")
                                 st.code(chunk["content"], language=lang)
                             else:
                                 st.info(chunk["content"])
                                 
+                # Yanıtı veritabanına kaydet
                 save_message(st.session_state.selected_session_id, "assistant", answer)
+                
+                # UI'ı tazelemek için tetikle
                 st.rerun()
 
-# TAB 2: Analytics Dashboard
+# TAB 2: Analytics Dashboard (Yapay Zeka Özetleri ile)
 with tab_analytics:
     st.markdown("### 📊 Veritabanı ve Kütüphane İstatistikleri")
     
@@ -351,33 +349,34 @@ with tab_analytics:
     
     if db_docs:
         df = pd.DataFrame(db_docs)
-        # Sadece ebeveyn dökümanlar üzerinden dosya sayısı hesapla
         unique_files = df["source_file"].nunique()
         total_chunks = len(df)
-        child_chunks = len(df[df["is_parent"] == 0])
-        parent_chunks = len(df[df["is_parent"] == 1])
         
+        # Metrikler
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Toplam İndekslenen Belge", unique_files)
+            st.metric("Toplam İndekslenen Belge (Dosya)", unique_files)
         with col2:
-            st.metric("Ebeveyn Paragraf Sayısı", parent_chunks)
+            st.metric("Toplam Metin Parçası (Chunk)", total_chunks)
         with col3:
-            st.metric("Alt Vektör Parçacıkları (Child)", child_chunks)
+            st.metric("Saklanan Toplam Vektör", total_chunks)
             
-        # Dosya Türlerine Göre Dağılım Grafiği (Sadece çocuk parçalar üzerinden)
+        # Dosya Türlerine Göre Dağılım Grafiği
         st.markdown("#### 📈 Dosya Formatı Dağılımı")
-        chart_data = df[df["is_parent"] == 0]["file_type"].value_counts()
+        chart_data = df["file_type"].value_counts()
         st.bar_chart(chart_data)
         
-        # Yapay Zeka Özetleri
+        # Doküman Listesi Tablosu (AI Özetleri ve Etiketleri ile)
         st.markdown("#### 📂 İndekslenen Dosyalar ve Yapay Zeka Analizi")
+        
+        # Dosya bazında grupla ve özet/etiket bilgilerini çek
         grouped = df.groupby("source_file").first().reset_index()
         
         for idx, row in grouped.iterrows():
             with st.container():
                 st.markdown(f"##### 📄 {row['source_file']} (`{row['file_type'].upper()}`)")
                 
+                # Etiketleri rozet (badge) haline getir
                 tags_html = ""
                 if row['tags']:
                     for tag in row['tags'].split(","):

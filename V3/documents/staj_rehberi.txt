@@ -1,0 +1,11 @@
+Staj Programı Genel Bilgileri:
+Microsoft Yaz Okulu Stajı toplamda 4 hafta sürmektedir. Staj süresince her öğrencinin kendi yerel cihazında çalışabilen bir yapay zeka uygulaması geliştirmesi beklenmektedir.
+
+Haftalık Raporlama ve Toplantılar:
+Stajyerler her hafta Cuma günleri saat 16:00'da Mentor Barbaros Bey ile haftalık durum değerlendirme toplantısı yapacaktır. Bu toplantıdan önce projenin güncel kodlarının GitHub reposuna gönderilmiş olması ve haftalık raporun teslim edilmesi zorunludur.
+
+Staj Raporu ve Teslim Detayları:
+Final staj raporunun son teslim tarihi stajın son günü olan 24 Temmuz 2026 saat 17:00'dir. Raporların PDF formatında, okulun staj şablonuna uygun şekilde hazırlanıp staj yönetim sistemine yüklenmesi gerekmektedir. Geç teslim edilen raporlar kabul edilmeyecektir.
+
+Sunum ve Demo Günü:
+Stajın son haftasında (4. Hafta Cuma günü) tüm öğrenciler geliştirdikleri projelerin canlı demosunu jüriye sunacaktır. Her öğrencinin sunum süresi 5 dakika ile sınırlıdır. Sunumda projenin teknik mimarisi, yerel modellerin performansı ve karşılaşılan zorluklar anlatılmalıdır.
