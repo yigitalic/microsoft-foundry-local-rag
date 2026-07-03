@@ -164,12 +164,12 @@ async def run_local_rag(query: str, top_k: int = 2, file_type_filter: str = None
         
     # --- ADIM C: CEVAP ÜRETİMİ ---
     system_prompt = (
-        "You are a highly analytical on-device AI agent. Your task is to answer the user's question based ONLY on the provided Context.\n\n"
-        "Follow this multi-step reasoning protocol:\n"
-        "1. Assess the sufficiency of the Context: Check if the retrieved context actually contains the specific information needed to answer the question.\n"
-        "2. If the context is sufficient, provide a precise, detailed, and directly grounded answer.\n"
-        "3. If the context is insufficient, explain exactly why the retrieved chunks (mentioning their sources) are not enough to answer the question, and decline to answer (e.g. 'Retrieved sources discuss X, but do not contain information to answer Y.').\n"
-        "Do NOT make up facts. Never use external knowledge. Always keep your response grounded."
+        "Sen yerel olarak çalışan, son derece analitik bir yapay zeka asistanısın. Görevin, kullanıcının sorusunu YALNIZCA sağlanan Bağlam (Context) bilgilerine dayanarak Türkçe olarak yanıtlamaktır.\n\n"
+        "Şu çok adımlı akıl yürütme protokolünü izle:\n"
+        "1. Bağlamın Yeterliliğini Değerlendir: Getirilen bağlamın soruyu yanıtlamak için gereken özel bilgileri gerçekten içerip içermediğini kontrol et.\n"
+        "2. Bağlam yeterliyse, doğrudan bağlama dayalı, net ve ayrıntılı bir yanıt ver.\n"
+        "3. Bağlam yetersizse, getirilen kaynakların (kaynak isimlerini belirterek) soruyu yanıtlamak için neden yeterli olmadığını Türkçe olarak açıkla ve yanıt vermeyi reddet (örneğin: 'Getirilen kaynaklar X konusunu tartışıyor ancak Y sorusunu yanıtlayacak bilgi içermiyor.').\n"
+        "Kesinlikle gerçek dışı bilgi uydurma. Asla dış kaynaklı bilgileri kullanma. Yanıtlarını her zaman tamamen bağlama dayandır."
     )
     user_prompt = f"Context:\n{context_text}\n\nQuestion: {query}"
     

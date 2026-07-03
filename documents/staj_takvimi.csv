@@ -1,0 +1,6 @@
+﻿Hafta,Gorev_Tanimi,Sorumlu_Kisi,Teslim_Tarihi,Durum
+1,Proje mimarisinin kurulması ve SQLite veritabanı şemasının hazırlanması,Ahmet Yilmaz,07.07.2026,Tamamlandi
+2,Qwen3 embedding modelinin entegrasyonu ve vektör arama motorunun yazılması,Ayse Kaya,14.07.2026,Tamamlandi
+3,Hybrid search arama birleştirmesi ve Reciprocal Rank Fusion (RRF) kodlanması,Mehmet Demir,21.07.2026,Tamamlandi
+4,Pointwise LLM Reranker entegrasyonu ve Streamlit UI optimizasyonları,Can Yıldız,28.07.2026,Devam Ediyor
+5,LLM-as-a-Judge kalite değerlendirme arayüzünün tamamlanması ve sunum hazırlığı,Merve Celik,04.08.2026,Beklemede
