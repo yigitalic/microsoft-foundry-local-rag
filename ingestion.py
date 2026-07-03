@@ -38,6 +38,37 @@ def extract_docx_text(file_path: str) -> str:
             text += p.text + "\n\n"
     return text
 
+def extract_csv_text(file_path: str) -> str:
+    import pandas as pd
+    try:
+        df = pd.read_csv(file_path)
+        rows_text = []
+        for idx, row in df.iterrows():
+            row_str = ", ".join([f"{col}: {val}" for col, val in row.items() if pd.notna(val)])
+            rows_text.append(f"Row {idx+1}: {row_str}")
+        return "\n\n".join(rows_text)
+    except Exception as e:
+        print(f"[HATA] CSV okunamadı: {e}")
+        return ""
+
+def extract_xlsx_text(file_path: str) -> str:
+    import pandas as pd
+    try:
+        xls = pd.ExcelFile(file_path)
+        sheets_text = []
+        for sheet_name in xls.sheet_names:
+            df = pd.read_excel(xls, sheet_name=sheet_name)
+            rows_text = [f"Sheet: {sheet_name}"]
+            for idx, row in df.iterrows():
+                row_str = ", ".join([f"{col}: {val}" for col, val in row.items() if pd.notna(val)])
+                rows_text.append(f"Row {idx+1}: {row_str}")
+            sheets_text.append("\n".join(rows_text))
+        return "\n\n".join(sheets_text)
+    except Exception as e:
+        print(f"[HATA] Excel okunamadı: {e}")
+        return ""
+
+
 # --- Web Kazıyıcı (Scraper) Modülü ---
 
 def scrape_and_save_url(url: str) -> str:
@@ -200,7 +231,7 @@ def run_ingestion():
     if not os.path.exists(DOCS_DIR):
         os.makedirs(DOCS_DIR, exist_ok=True)
         
-    all_files = [f for f in os.listdir(DOCS_DIR) if os.path.splitext(f)[1].lower() in [".txt", ".pdf", ".docx", ".py", ".js", ".md"]]
+    all_files = [f for f in os.listdir(DOCS_DIR) if os.path.splitext(f)[1].lower() in [".txt", ".pdf", ".docx", ".py", ".js", ".md", ".csv", ".xlsx"]]
     print(f"[SİSTEM] '{DOCS_DIR}' klasöründe {len(all_files)} dosya bulundu.")
     
     if not all_files:
@@ -232,6 +263,10 @@ def run_ingestion():
                 text = extract_pdf_text(file_path)
             elif ext == ".docx":
                 text = extract_docx_text(file_path)
+            elif ext == ".csv":
+                text = extract_csv_text(file_path)
+            elif ext == ".xlsx":
+                text = extract_xlsx_text(file_path)
             else:
                 with open(file_path, "r", encoding="utf-8") as f:
                     text = f.read()
@@ -256,7 +291,9 @@ def run_ingestion():
         ".docx": "docx",
         ".py": "python",
         ".js": "javascript",
-        ".md": "markdown"
+        ".md": "markdown",
+        ".csv": "csv",
+        ".xlsx": "excel"
     }
     
     total_parents = 0

@@ -85,12 +85,52 @@ def generate_expanded_queries(query: str, client, model_id: str) -> list[str]:
         print(f"[HATA] Sorgu genişletilemedi: {e}")
         return [query]
 
+# --- Yerel Re-ranking (LLM-as-a-Reranker) ---
+
+def rerank_results_with_llm(query: str, results: list[dict], client, model_id: str) -> list[dict]:
+    """phi-4-mini kullanarak aday dokümanları sorguya uygunluklarına göre 0-10 arası puanlar ve sıralar."""
+    if not results or not client or not model_id:
+        return results
+        
+    reranked = []
+    for doc in results:
+        prompt = (
+            f"You are a search relevance evaluator. Score the relevance of the document below to the user query.\n\n"
+            f"Query: {query}\n\n"
+            f"Document Content:\n{doc['content']}\n\n"
+            "Evaluate on a scale of 0 to 10, where 10 is extremely relevant and 0 is completely irrelevant.\n"
+            "Respond ONLY with the single integer score (e.g. 7). Do not include any explanations, introduction, or other characters."
+        )
+        try:
+            response = client.chat.completions.create(
+                model=model_id,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=0.0,
+                max_tokens=3
+            )
+            score_str = response.choices[0].message.content.strip()
+            digits = re.findall(r'\d+', score_str)
+            score = float(digits[0]) if digits else 0.0
+        except Exception as e:
+            print(f"[RERANKER HATA] Rerank puanlanamadı: {e}")
+            score = doc.get("score", 0.0)
+            
+        doc_copy = doc.copy()
+        doc_copy["original_score"] = doc.get("score", 0.0)
+        doc_copy["score"] = score
+        reranked.append(doc_copy)
+        
+    # Puanlara göre azalan sırada sırala
+    reranked.sort(key=lambda x: x["score"], reverse=True)
+    return reranked
+
 # --- Ana Hibrit Parent-Document Retrieval Fonksiyonu ---
 
-def retrieve_context(query: str, top_k: int = 2, file_type_filter: str = None, expanded_queries: list[str] = None) -> list[dict]:
+def retrieve_context(query: str, top_k: int = 2, file_type_filter: str = None, expanded_queries: list[str] = None, client=None, model_id: str = None, use_reranker: bool = False) -> list[dict]:
     """
     Sorgu varyasyonlarını kullanarak alt (child) parçalar arasında arama yapar
     ve eşleşen en yüksek RRF skorlu parçaların ebeveyn (parent) dökümanlarını SQLite'tan çekip döndürür.
+    İsteğe bağlı olarak, çekilen adayları yerel LLM (phi-4-mini) ile yeniden sıralar (Re-ranking).
     """
     # 1. Veritabanındaki tüm dökümanları oku
     all_docs = get_all_documents()
@@ -152,18 +192,28 @@ def retrieve_context(query: str, top_k: int = 2, file_type_filter: str = None, e
     parent_results = []
     seen_parents = set()
     
+    # Eğer reranker aktifse, puanlanmak üzere daha fazla aday (top_k * 2) çekelim
+    target_candidates = top_k * 2 if use_reranker else top_k
+    
     for child in hybrid_results:
         parent_id = child["parent_id"]
         if parent_id and parent_id not in seen_parents:
             parent_doc = get_document_by_id(parent_id)
             if parent_doc:
-                # Orijinal alt parçanın skorunu ebeveyne yansıtıyoruz
+                # Orijinal alt parçanın RRF skorunu ebeveyne yansıtıyoruz
                 parent_doc["score"] = child["score"]
                 parent_results.append(parent_doc)
                 seen_parents.add(parent_id)
                 
-        # İstenen top_k adet ebeveyne ulaşıldığında döngüyü kes
-        if len(parent_results) >= top_k:
+        # İstenen aday sayısına ulaşıldığında döngüyü kes
+        if len(parent_results) >= target_candidates:
             break
             
+    # --- E. YEREL RE-RANKING (İSTEĞE BAĞLI) ---
+    if use_reranker and client and model_id:
+        parent_results = rerank_results_with_llm(query, parent_results, client, model_id)
+        # Re-rank işleminden sonra sadece asıl istenen top_k miktarını al
+        parent_results = parent_results[:top_k]
+        
     return parent_results
+

@@ -13,6 +13,7 @@ from database import (
 from vector_search import VectorSearchEngine
 from retrieval import retrieve_context, generate_expanded_queries
 from ingestion import run_ingestion, scrape_and_save_url
+from evaluator import run_evaluation_for_ui
 
 # Veritabanını ilklendir
 init_db()
@@ -114,7 +115,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Helper function to run async RAG pipeline
-async def run_local_rag(query: str, top_k: int = 2, file_type_filter: str = None):
+async def run_local_rag(query: str, top_k: int = 2, file_type_filter: str = None, use_reranker: bool = False):
     from foundry_local_sdk import Configuration, FoundryLocalManager
     
     # 1. Local LLM (phi-4-mini) servisini başlat (Sorgu genişletme ve arama için)
@@ -149,7 +150,7 @@ async def run_local_rag(query: str, top_k: int = 2, file_type_filter: str = None
         
     # --- ADIM B: HİBRİT EBEVEYN DÖKÜMAN ARAMASI (Parent-Document Retrieval) ---
     filter_val = None if file_type_filter == "Hepsi" else file_type_filter
-    chunks = retrieve_context(query, top_k=top_k, file_type_filter=filter_val, expanded_queries=expanded_queries)
+    chunks = retrieve_context(query, top_k=top_k, file_type_filter=filter_val, expanded_queries=expanded_queries, client=client, model_id=model.id, use_reranker=use_reranker)
     
     if not chunks:
         model.unload()
@@ -246,18 +247,24 @@ with st.sidebar:
     # Arama Filtrelemesi
     st.markdown("<div class='sidebar-section'>", unsafe_allow_html=True)
     st.markdown("<span style='font-size:1rem;font-weight:700;'>🔍 Filtre (Metaveri)</span>", unsafe_allow_html=True)
-    filter_options = ["Hepsi", "text", "pdf", "docx", "python", "javascript", "markdown"]
+    filter_options = ["Hepsi", "text", "pdf", "docx", "python", "javascript", "markdown", "csv", "excel"]
     selected_filter = st.selectbox(
         "Tür:", options=filter_options, index=0, label_visibility="collapsed"
     )
+    st.markdown("</div>", unsafe_allow_html=True)
+    
+    # Reranker Ayarları
+    st.markdown("<div class='sidebar-section'>", unsafe_allow_html=True)
+    st.markdown("<span style='font-size:1rem;font-weight:700;'>⚙️ Arama Parametreleri</span>", unsafe_allow_html=True)
+    use_reranker = st.checkbox("Yerel Re-ranking (LLM) Aktif", value=False, help="Aday dokümanları yerel LLM ile yeniden puanlar ve sıralar.")
     st.markdown("</div>", unsafe_allow_html=True)
     
     # Dosya Yükleyici
     st.markdown("<div class='sidebar-section'>", unsafe_allow_html=True)
     st.markdown("<span style='font-size:1rem;font-weight:700;'>📁 Belge / Kod Yükle</span>", unsafe_allow_html=True)
     uploaded_file = st.file_uploader(
-        "Metin, PDF, Word, Kod...",
-        type=["txt", "pdf", "docx", "py", "js", "md"],
+        "Metin, PDF, Excel, CSV, Kod...",
+        type=["txt", "pdf", "docx", "py", "js", "md", "csv", "xlsx"],
         label_visibility="collapsed"
     )
     if uploaded_file is not None:
@@ -291,7 +298,7 @@ with st.sidebar:
     st.markdown("</div>", unsafe_allow_html=True)
 
 # Main Application Tabs
-tab_chat, tab_analytics = st.tabs(["💬 Sohbet Asistanı", "📊 Veri Analitiği (Dashboard)"])
+tab_chat, tab_analytics, tab_eval = st.tabs(["💬 Sohbet Asistanı", "📊 Veri Analitiği (Dashboard)", "🧪 Sistem Değerlendirme (Evaluator)"])
 
 # TAB 1: Chat Assistant
 with tab_chat:
@@ -323,7 +330,7 @@ with tab_chat:
         
         with st.chat_message("assistant", avatar="🤖"):
             with st.spinner("Sorgu genişletiliyor, aranıyor ve cevaplanıyor (Çevrimdışı)..."):
-                answer, chunks = asyncio.run(run_local_rag(user_query, file_type_filter=selected_filter))
+                answer, chunks = asyncio.run(run_local_rag(user_query, file_type_filter=selected_filter, use_reranker=use_reranker))
                 
                 st.markdown(answer)
                 
@@ -389,3 +396,81 @@ with tab_analytics:
         
     else:
         st.warning("Veritabanı boş. Lütfen sol menüden dosya yükleyin veya ingestion.py çalıştırın.")
+
+# TAB 3: System Evaluation (Evaluator UI)
+with tab_eval:
+    st.markdown("### 🧪 Yerel RAG Değerlendirme ve Kalite Raporu")
+    st.markdown("Bu panelde, RAG sistemini 3 farklı kategoride (Bilgi Tabanı, Kod/Teknik Soru, Sınır Durum) test ederek sistemin **Doğruluk (Faithfulness)** ve **Alaka (Relevance)** düzeylerini yerel yapay zeka hakemliği (LLM-as-a-Judge) ile değerlendirebilirsiniz.")
+    
+    if st.button("🚀 Değerlendirmeyi Başlat", use_container_width=True):
+        with st.spinner("Yerel model yükleniyor ve test senaryoları koşturuluyor..."):
+            from foundry_local_sdk import Configuration, FoundryLocalManager
+            from evaluator import run_evaluation_for_ui
+            
+            web_config = Configuration.WebService(urls="http://127.0.0.1:0")
+            config = Configuration(app_name="foundry-local-test", web=web_config)
+            
+            try:
+                FoundryLocalManager.initialize(config)
+            except Exception:
+                pass
+                
+            manager = FoundryLocalManager.instance
+            catalog = manager.catalog
+            manager.start_web_service()
+            endpoint = manager.urls[0]
+            
+            model = catalog.get_model("phi-4-mini")
+            model.load()
+            
+            client = openai.OpenAI(
+                base_url=f"{endpoint}/v1" if not endpoint.endswith("/v1") else endpoint,
+                api_key="not-needed"
+            )
+            
+            try:
+                eval_results = run_evaluation_for_ui(client, model.id)
+                
+                # Metrik hesapla
+                avg_faithfulness = sum(r["faithfulness"] for r in eval_results) / len(eval_results)
+                avg_relevance = sum(r["relevance"] for r in eval_results) / len(eval_results)
+                
+                st.success("Değerlendirme başarıyla tamamlandı!")
+                
+                # Metrik kartları
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Ortalama Doğruluk (Faithfulness)", f"{avg_faithfulness:.1f} / 5.0")
+                with col2:
+                    st.metric("Ortalama Alaka (Relevance)", f"{avg_relevance:.1f} / 5.0")
+                    
+                # Ayrıntılı kartlar
+                st.markdown("#### 📋 Senaryo Detayları")
+                for idx, res in enumerate(eval_results, 1):
+                    with st.container():
+                        st.markdown(f"##### **Senaryo {idx}: {res['category']}**")
+                        st.markdown(f"**Soru:** `{res['question']}`")
+                        
+                        # Kaynaklar
+                        srcs_html = " ".join([f"<span class='tag-badge'>{s}</span>" for s in res['sources']])
+                        st.markdown(f"**Bulunan Kaynaklar:** {srcs_html}", unsafe_allow_html=True)
+                        
+                        # Cevap
+                        st.markdown(f"**Üretilen Cevap:**")
+                        st.info(res['answer'])
+                        
+                        # LLM Judge Puanları
+                        col_f, col_r = st.columns(2)
+                        with col_f:
+                            st.markdown(f"**Doğruluk Puanı:** `{res['faithfulness']}/5` 🎯")
+                        with col_r:
+                            st.markdown(f"**Alaka Puanı:** `{res['relevance']}/5` 👁️")
+                            
+                        st.markdown(f"**Hakem Açıklaması:** *{res['explanation']}*")
+                        st.markdown("---")
+                        
+            except Exception as e:
+                st.error(f"Değerlendirme sırasında bir hata oluştu: {e}")
+            finally:
+                model.unload()
+                manager.stop_web_service()
